@@ -1,0 +1,14 @@
+diff --git a/config.c b/config.c
+index a69f152..f12b61f 100644
+--- a/config.c
++++ b/config.c
+@@ -1649,7 +1649,8 @@ duperror:
+ 				}
+ 			}
+ 
+-			if (sb.st_dev != sb2.st_dev) {
++			if (sb.st_dev != sb2.st_dev
++				&& !(newlog->flags & (LOG_FLAG_COPYTRUNCATE | LOG_FLAG_COPY))) {
+ 				message(MESS_ERROR,
+ 					"%s:%d olddir %s and log file %s "
+ 					"are on different devices\n", configFile,
