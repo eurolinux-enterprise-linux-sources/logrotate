@@ -1,7 +1,7 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.7.8
-Release: 23%{?dist}
+Release: 25%{?dist}
 License: GPL+
 URL: https://fedorahosted.org/logrotate/
 Group: System Environment/Base
@@ -32,6 +32,7 @@ Patch24: logrotate-3.7.8-atomic-statefile.patch
 Patch25: logrotate-3.7.8-maxsize.patch
 Patch26: logrotate-3.7.8-createolddir.patch
 Patch28: logrotate-3.7.8-covscan.path
+Patch29: logrotate-3.7.8-compress-subject.patch
 
 Requires: coreutils >= 5.92 libsepol libselinux popt
 BuildRequires: libselinux-devel popt-devel libacl-devel
@@ -76,6 +77,7 @@ log files on your system.
 %patch25 -p1 -b .maxsize
 %patch26 -p1 -b .createolddir
 %patch28 -p1 -b .covscan
+%patch29 -p1 -b .compressmail
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -106,6 +108,12 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0644, root, root) %verify(not size md5 mtime) %config(noreplace) %{_localstatedir}/lib/logrotate.status
 
 %changelog
+* Wed Oct 15 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-25
+- fix #1228632 - fix also tests to reflect mail subject change
+
+* Wed Sep 30 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-24
+- fix #1228632 - make filename in subject consistent when used with compress
+
 * Mon Mar 09 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-23
 - revert fix #1177970
 
