@@ -1,0 +1,378 @@
+diff --git a/config.c b/config.c
+index e4ba3fb..b200549 100644
+--- a/config.c
++++ b/config.c
+@@ -125,6 +125,62 @@ static char *readPath(const char *configFile, int lineNum, char *key,
+ 	return NULL;
+ }
+ 
++static int readModeUidGid(const char *configFile, int lineNum, char *key,
++							const char *directive, mode_t *mode, uid_t *uid,
++							gid_t *gid) {
++	char u[200], g[200];
++	int m;
++	char tmp;
++	int rc;
++	struct group *group;
++	struct passwd *pw = NULL;
++
++	rc = sscanf(key, "%o %199s %199s%c", &m, u, g, &tmp);
++	/* We support 'key <owner> <group> notation now */
++	if (rc == 0) {
++		rc = sscanf(key, "%199s %199s%c", u, g, &tmp);
++		/* Simulate that we have read mode and keep the default value. */
++		if (rc > 0) {
++			m = *mode;
++			rc += 1;
++		}
++	}
++
++	if (rc == 4) {
++		message(MESS_ERROR, "%s:%d extra arguments for "
++			"%s\n", configFile, lineNum, directive);
++		return -1;
++	}
++
++	if (rc > 0) {
++		*mode = m;
++	}
++
++	if (rc > 1) {
++		pw = getpwnam(u);
++		if (!pw) {
++			message(MESS_ERROR, "%s:%d unknown user '%s'\n",
++				configFile, lineNum, u);
++			return -1;
++		}
++		*uid = pw->pw_uid;
++		endpwent();
++	}
++	if (rc > 2) {
++		group = getgrnam(g);
++		if (!group) {
++			message(MESS_ERROR, "%s:%d unknown group '%s'\n",
++				configFile, lineNum, g);
++			return -1;
++		}
++		*gid = group->gr_gid;
++		endgrent();
++	}
++
++	return 0;
++}
++
++
+ static char *readAddress(const char *configFile, int lineNum, char *key,
+ 			 char **startPtr)
+ {
+@@ -156,6 +212,55 @@ static char *readAddress(const char *configFile, int lineNum, char *key,
+ 	return NULL;
+ }
+ 
++static int do_mkdir(const char *path, mode_t mode, uid_t uid, gid_t gid) {
++	struct stat sb;
++
++	if (stat(path, &sb) != 0) {
++		if (mkdir(path, mode) != 0 && errno != EEXIST) {
++			message(MESS_ERROR, "error creating %s: %s\n",
++				path, strerror(errno));
++			return -1;
++		}
++		if ((uid != sb.st_uid || gid != sb.st_gid) && 
++			chown(path, uid, gid)) {
++			message(MESS_ERROR, "error setting owner of %s to uid %d and gid %d: %s\n",
++				path, uid, gid, strerror(errno));
++			return -1;
++		}
++    }
++	else if (!S_ISDIR(sb.st_mode)) {
++		message(MESS_ERROR, "path %s already exists, but it is not a directory\n",
++			path);
++		errno = ENOTDIR;
++		return -1;
++	}
++
++	return 0;
++}
++
++static int mkpath(const char *path, mode_t mode, uid_t uid, gid_t gid) {
++	char *pp;
++	char *sp;
++	int rv;
++	char *copypath = strdup(path);
++
++	rv = 0;
++	pp = copypath;
++	while (rv == 0 && (sp = strchr(pp, '/')) != 0) {
++		if (sp != pp) {
++			*sp = '\0';
++			rv = do_mkdir(copypath, mode, uid, gid);
++			*sp = '/';
++		}
++		pp = sp + 1;
++	}
++	if (rv == 0) {
++		rv = do_mkdir(path, mode, uid, gid);
++	}
++	free(copypath);
++	return rv;
++}
++
+ static int checkFile(const char *fname)
+ {
+ 	int i;
+@@ -207,6 +312,9 @@ static void copyLogInfo(struct logInfo *to, struct logInfo *from)
+     to->rotateCount = from->rotateCount;
+     to->rotateAge = from->rotateAge;
+     to->logStart = from->logStart;
++    to->olddirMode = from->olddirMode;
++    to->olddirUid = from->olddirUid;
++    to->olddirGid = from->olddirGid;
+     if (from->pre)
+ 	to->pre = strdup(from->pre);
+     if (from->post)
+@@ -435,6 +543,9 @@ int readAllConfigPaths(const char **paths)
+ 		.createMode = NO_MODE,
+ 		.createUid = NO_UID,
+ 		.createGid = NO_GID,
++		.olddirMode = NO_MODE,
++		.olddirUid = NO_UID,
++		.olddirGid = NO_GID,
+ 		.compress_options_list = NULL,
+ 		.compress_options_count = 0
+     };
+@@ -505,6 +616,7 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 	static unsigned recursion_depth = 0U;
+ 	char *globerr_msg = NULL;
+ 	int in_config = 0;
++	int rv;
+ 
+     /* FIXME: createOwner and createGroup probably shouldn't be fixed
+        length arrays -- of course, if we aren't run setuid it doesn't
+@@ -800,6 +912,35 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 		newlog->flags |= LOG_FLAG_CREATE;
+ 
+ 		*endtag = oldchar, start = endtag;
++		} else if (!strcmp(start, "createolddir")) {
++			*endtag = oldchar, start = endtag;
++
++			endtag = start;
++			while (*endtag != '\n')
++				endtag++;
++			while (isspace(*endtag))
++				endtag--;
++			endtag++;
++			oldchar = *endtag, *endtag = '\0';
++
++			rv = readModeUidGid(configFile, lineNum, start, "createolddir",
++							&newlog->olddirMode, &newlog->olddirUid,
++							&newlog->olddirGid);
++			if (rv == -1) {
++				if (newlog != defConfig) {
++					*endtag = oldchar, start = endtag;
++					logerror = 1;
++					continue;
++				} else {
++					return 1;
++				}
++			}
++
++			newlog->flags |= LOG_FLAG_OLDDIRCREATE;
++			*endtag = oldchar, start = endtag;
++		} else if (!strcmp(start, "nocreateolddir")) {
++			newlog->flags &= ~LOG_FLAG_OLDDIRCREATE;
++			*endtag = oldchar, start = endtag;
+ 	    } else if (!strcmp(start, "nocreate")) {
+ 		newlog->flags &= ~LOG_FLAG_CREATE;
+ 
+@@ -1460,45 +1601,61 @@ duperror:
+ 		globerr_msg = NULL;
+ 		if (!(newlog->flags & LOG_FLAG_MISSINGOK))
+ 		    return 1;
+-	    }
++	}
+ 
+-	    if (newlog->oldDir) {
++	if (newlog->oldDir) {
+ 		for (i = 0; i < newlog->numFiles; i++) {
+-		    char *ld;
+-		    dirName = ourDirName(newlog->files[i]);
+-		    if (stat(dirName, &sb2)) {
+-			message(MESS_ERROR,
+-				"%s:%d error verifying log file "
+-				"path %s: %s\n", configFile, lineNum,
+-				dirName, strerror(errno));
++			char *ld;
++			int rv;
++			dirName = ourDirName(newlog->files[i]);
++			if (stat(dirName, &sb2)) {
++				message(MESS_ERROR,
++					"%s:%d error verifying log file "
++					"path %s: %s\n", configFile, lineNum,
++					dirName, strerror(errno));
++				free(dirName);
++				return 1;
++			}
++			ld = alloca(strlen(dirName) + strlen(newlog->oldDir) + 2);
++			sprintf(ld, "%s/%s", dirName, newlog->oldDir);
+ 			free(dirName);
+-			return 1;
+-		    }
+-		    ld = alloca(strlen(dirName) + strlen(newlog->oldDir) +
+-				2);
+-		    sprintf(ld, "%s/%s", dirName, newlog->oldDir);
+-		    free(dirName);
+-
+-		    if (newlog->oldDir[0] != '/')
+-			dirName = ld;
+-		    else
+-			dirName = newlog->oldDir;
+-		    if (stat(dirName, &sb)) {
+-			message(MESS_ERROR, "%s:%d error verifying olddir "
+-				"path %s: %s\n", configFile, lineNum,
+-				dirName, strerror(errno));
+-			return 1;
+-		    }
+ 
+-		    if (sb.st_dev != sb2.st_dev) {
+-			message(MESS_ERROR,
+-				"%s:%d olddir %s and log file %s "
+-				"are on different devices\n", configFile,
+-				lineNum, newlog->oldDir, newlog->files[i]);
+-			return 1;
++			if (newlog->oldDir[0] != '/') {
++				dirName = ld;
++			}
++		    else {
++				dirName = newlog->oldDir;
++			}
++
++			rv = stat(dirName, &sb);
++			if (rv) {
++				if (errno == ENOENT && newlog->flags & LOG_FLAG_OLDDIRCREATE) {
++					message(MESS_DEBUG, "%s:%d creating olddir directory, "
++											"path %s\n", configFile, lineNum,
++											dirName);
++					if (mkpath(dirName, newlog->olddirMode,
++						newlog->olddirUid, newlog->olddirGid)) {
++						return 1;
++					}
++					stat(dirName, &sb);
++				}
++				else {
++					message(MESS_ERROR, "%s:%d error verifying olddir "
++						"path %s: %s\n", configFile, lineNum,
++						dirName, strerror(errno));
++					return 1;
++				}
++			}
++
++			if (sb.st_dev != sb2.st_dev) {
++				message(MESS_ERROR,
++					"%s:%d olddir %s and log file %s "
++					"are on different devices\n", configFile,
++					lineNum, newlog->oldDir, newlog->files[i]);
++				return 1;
+ 		    }
+ 		}
+-	    }
++	}
+ 
+ 	    newlog = defConfig;
+ 
+diff --git a/logrotate.8 b/logrotate.8
+index 7f5fb77..f0fac8b 100644
+--- a/logrotate.8
++++ b/logrotate.8
+@@ -205,6 +205,16 @@ file for the omitted attributes. This option can be disabled using the
+ \fBnocreate\fR option.
+ 
+ .TP
++\fBcreateolddir \fImode\fR \fIowner\fR \fIgroup\fR
++If the directory specified by \fBolddir\fR directive does not exist, it is
++created. \fImode\fR specifies the mode for the \fBolddir\fR directory
++in octal (the same as \fBchmod\fR(2)), \fIowner\fR specifies the user name
++who will own the \fBolddir\fR directory, and \fIgroup\fR specifies the group
++the \fBolddir\fR directory will belong to. This option can be disabled using the
++\fBnocreateolddir\fR option.
++
++
++.TP
+ \fBdaily\fR
+ Log files are rotated every day.
+ 
+@@ -329,6 +339,10 @@ Do not truncate the original log file in place after creating a copy
+ New log files are not created (this overrides the \fBcreate\fR option).
+ 
+ .TP
++\fBnocreateolddir\fR
++\fBolddir\fR directory is not created by logrotate when it does not exist.
++ 
++.TP
+ \fBnodelaycompress\fR
+ Do not postpone compression of the previous log file to the next rotation cycle
+ (this overrides the \fBdelaycompress\fR option).
+diff --git a/logrotate.h b/logrotate.h
+index 7d50f96..75e240b 100644
+--- a/logrotate.h
++++ b/logrotate.h
+@@ -18,6 +18,7 @@
+ #define LOG_FLAG_COPY		(1 << 8)
+ #define LOG_FLAG_DATEEXT	(1 << 9)
+ #define LOG_FLAG_SHRED		(1 << 10)
++#define LOG_FLAG_OLDDIRCREATE	(1 << 13)
+ 
+ #define NO_MODE ((mode_t) -1)
+ #define NO_UID  ((uid_t) -1)
+@@ -51,6 +52,9 @@ struct logInfo {
+     mode_t createMode;		/* if any/all of these are -1, we use the */
+     uid_t createUid;		/* attributes from the log file just rotated */
+     gid_t createGid;
++    mode_t olddirMode;
++    uid_t olddirUid;
++    uid_t olddirGid;
+     /* these are at the end so they end up nil */
+     const char **compress_options_list;
+     int compress_options_count;
+diff --git a/test/test b/test/test
+index ca0b494..5d0044c 100755
+--- a/test/test
++++ b/test/test
+@@ -16,7 +16,9 @@ cleanup() {
+ genconfig() {
+     input=test-config.$1.in
+     output=test-config.$1
+-    sed "s,&DIR&,$PWD,g" < $input > $output
++    user=$(id -u -n)
++    group=$(id -g -n)
++    sed "s,&DIR&,$PWD,g" < $input | sed "s,&USER&,$user,g" | sed "s,&GROUP&,$group,g" > $output
+ }
+ 
+ createlog() {
+@@ -344,9 +346,15 @@ cleanup 13
+ 
+ preptest test.log 13 1 0
+ rm -rf testdir
+-mkdir testdir
+ $RLR test-config.13 --force
+ 
++ls -l|grep testdir|grep "drwx------." 2>/dev/null >/dev/null
++if [ $? != 0 ]; then
++	echo "testdir should have mode 2700, but it has:"
++	ls -l|grep testdir
++	exit 3
++fi
++
+ checkoutput <<EOF
+ test.log 0
+ testdir/test.log.1 0 zero
+diff --git a/test/test-config.13.in b/test/test-config.13.in
+index 31a29ef..dc2efd5 100644
+--- a/test/test-config.13.in
++++ b/test/test-config.13.in
+@@ -4,4 +4,5 @@ create
+     monthly
+     rotate 1
+     olddir &DIR&/testdir
++    createolddir 700 &USER& &GROUP&
+ }

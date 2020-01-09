@@ -1,0 +1,97 @@
+diff --git a/config.c b/config.c
+index 2a359c5..e4ba3fb 100644
+--- a/config.c
++++ b/config.c
+@@ -203,6 +203,7 @@ static void copyLogInfo(struct logInfo *to, struct logInfo *from)
+     to->criterium = from->criterium;
+     to->threshhold = from->threshhold;
+     to->minsize = from->minsize;
++	to->maxsize = from->maxsize;
+     to->rotateCount = from->rotateCount;
+     to->rotateAge = from->rotateAge;
+     to->logStart = from->logStart;
+@@ -415,6 +416,7 @@ int readAllConfigPaths(const char **paths)
+ 		.criterium = ROT_SIZE,
+ 		.threshhold = 1024 * 1024,
+ 		.minsize = 0,
++		.maxsize = 0,
+ 		.rotateCount = 0,
+ 		.rotateAge = 0,
+ 		.logStart = -1,
+@@ -802,7 +804,7 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 		newlog->flags &= ~LOG_FLAG_CREATE;
+ 
+ 		*endtag = oldchar, start = endtag;
+-	    } else if (!strcmp(start, "size") || !strcmp(start, "minsize")) {
++	    } else if (!strcmp(start, "size") || !strcmp(start, "minsize") || !strcmp(start, "maxsize")) {
+ 		unsigned long long size = 0;
+ 		char *opt = start;
+ 		*endtag = oldchar, start = endtag;
+@@ -851,6 +853,8 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 		    if (!strncmp(opt, "size", 4)) {
+ 			newlog->criterium = ROT_SIZE;
+ 			newlog->threshhold = size;
++			} else if (!strncmp(opt, "maxsize", 7)) {
++				newlog->maxsize = size;
+ 		    } else
+ 			newlog->minsize = size;
+ 
+diff --git a/logrotate.8 b/logrotate.8
+index 9831a81..7f5fb77 100644
+--- a/logrotate.8
++++ b/logrotate.8
+@@ -281,7 +281,17 @@ if the logfile is to be rotated. The files are mailed to the
+ configured address if \fBmaillast\fR and \fBmail\fR are configured.
+ 
+ .TP
+-\fBminsize\fR \fIsize\fR
++\fBmaxsize\fR \fIsize\fR
++Log files are rotated when they grow bigger than \fIsize\fR bytes even
++before the additionally specified time interval (\fBdaily\fR, \fBweekly\fR,
++\fBmonthly\fR, or \fByearly\fR).  The related \fBsize\fR option is similar
++except that it is mutually exclusive with the time interval options, and it
++causes log files to be rotated without regard for the last rotation time.
++When \fBmaxsize\fR is used, both the size and timestamp of a log file are
++considered.
++
++.TP
++\fBminsize\fR  \fIsize\fR
+ Log files are rotated when they grow bigger than \fIsize\fR bytes, but not
+ before the additionally specified time interval (\fBdaily\fR, \fBweekly\fR,
+ \fBmonthly\fR, or \fByearly\fR).  The related \fBsize\fR option is similar
+diff --git a/logrotate.c b/logrotate.c
+index 87d1a88..256a9f0 100644
+--- a/logrotate.c
++++ b/logrotate.c
+@@ -772,6 +772,9 @@ int findNeedRotating(struct logInfo *log, int logNum)
+ 	    state->doRotate = 0;
+     }
+ 
++    if (log->maxsize && sb.st_size > log->maxsize)
++        state->doRotate = 1;
++
+     /* The notifempty flag overrides the normal criteria */
+     if (!(log->flags & LOG_FLAG_IFEMPTY) && !sb.st_size)
+ 	state->doRotate = 0;
+@@ -1437,6 +1440,9 @@ int rotateLogSet(struct logInfo *log, int force)
+     if (log->minsize) 
+ 	message(MESS_DEBUG, "only log files >= %llu bytes are rotated, ",	log->minsize);
+ 
++    if (log->maxsize) 
++	message(MESS_DEBUG, "log files >= %llu are rotated earlier, ",	log->minsize);
++
+     if (log->logAddress) {
+ 	message(MESS_DEBUG, "old logs mailed to %s\n", log->logAddress);
+     } else {
+diff --git a/logrotate.h b/logrotate.h
+index 0a7e305..7d50f96 100644
+--- a/logrotate.h
++++ b/logrotate.h
+@@ -34,6 +34,7 @@ struct logInfo {
+     enum { ROT_DAYS, ROT_WEEKLY, ROT_MONTHLY, ROT_YEARLY, ROT_SIZE,
+ 	    ROT_FORCE } criterium;
+     unsigned long long threshhold;
++	unsigned long long maxsize;
+     unsigned long long minsize;
+     int rotateCount;
+     int rotateAge;

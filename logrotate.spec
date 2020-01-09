@@ -1,14 +1,13 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.7.8
-Release: 17%{?dist}
+Release: 23%{?dist}
 License: GPL+
 URL: https://fedorahosted.org/logrotate/
 Group: System Environment/Base
 Source: https://fedorahosted.org/releases/l/o/logrotate/logrotate-%{version}.tar.gz
 Patch1: logrotate-3.7.7-curdir2.patch
 Patch2: logrotate-3.7.7-toolarge.patch
-Patch3: logrotate-3.7.8-devnull.patch
 Patch4: logrotate-3.7.8-man5.patch
 Patch5: logrotate-3.7.8-missingok.patch
 Patch6: logrotate-3.7.8-configsize.patch
@@ -28,6 +27,11 @@ Patch19: logrotate-3.7.8-umask.patch
 Patch20: logrotate-3.7.8-selinux-compress.patch
 Patch21: logrotate-3.7.8-unlink-temp.patch
 Patch22: logrotate-3.7.8-acl-vs-chmod.patch
+Patch23: logrotate-3.7.8-sortglob.patch
+Patch24: logrotate-3.7.8-atomic-statefile.patch
+Patch25: logrotate-3.7.8-maxsize.patch
+Patch26: logrotate-3.7.8-createolddir.patch
+Patch28: logrotate-3.7.8-covscan.path
 
 Requires: coreutils >= 5.92 libsepol libselinux popt
 BuildRequires: libselinux-devel popt-devel libacl-devel
@@ -48,7 +52,6 @@ log files on your system.
 %setup -q
 %patch1 -p1 -b .curdir
 %patch2 -p1 -b .toolarge
-%patch3 -p1 -b .devnull
 %patch4 -p1 -b .man5
 %patch5 -p1 -b .missingok
 %patch6 -b .configsize
@@ -68,6 +71,11 @@ log files on your system.
 %patch20 -p1 -b .selinuxcompress
 %patch21 -p1 -b .unlinktemp
 %patch22 -p1 -b .aclvschmod
+%patch23 -p1 -b .sortglob
+%patch24 -p1 -b .atomicstate
+%patch25 -p1 -b .maxsize
+%patch26 -p1 -b .createolddir
+%patch28 -p1 -b .covscan
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -92,12 +100,36 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0755, root, root) %{_sbindir}/logrotate
 %attr(0644, root, root) %{_mandir}/man8/logrotate.8*
 %attr(0644, root, root) %{_mandir}/man5/logrotate.conf.5*
-%attr(0755, root, root) %{_sysconfdir}/cron.daily/logrotate
+%attr(0700, root, root) %config(noreplace) %{_sysconfdir}/cron.daily/logrotate
 %attr(0644, root, root) %config(noreplace) %{_sysconfdir}/logrotate.conf
 %attr(0755, root, root) %dir %{_sysconfdir}/logrotate.d
 %attr(0644, root, root) %verify(not size md5 mtime) %config(noreplace) %{_localstatedir}/lib/logrotate.status
 
 %changelog
+* Mon Mar 09 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-23
+- revert fix #1177970
+
+* Tue Mar 03 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-22
+- fix #1177970 - fix the potential leaks in previous patch
+
+* Thu Feb 26 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-21
+- fix #1177970 - do not fail if log is removed during rotation
+
+* Tue Feb 03 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-20
+- fix #1117189 - sort logs only when dateformat is set
+
+* Thu Jan 29 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-19
+- fix #1047899 - add support for "maxsize" directive
+- fix #1125769 - add support for "createolddir" directive
+
+* Mon Dec 15 2014 Jan Kaluza <jkaluza@redhat.com> 3.7.8-18
+- fix #722209 - do not redirect output of logrotate to /dev/null, mark
+  logrotate.conf as config
+- fix #1117189 - sort logs according to dateformat when removing the old one
+- fix #625034 - update logrotate.status atomically
+- fix #984965 - fix possible overflow in "create" directive parsing
+- fix #1012485 - use permissions 0700 for cron.daily script
+
 * Tue May 28 2013 Jan Kaluza <jkaluza@redhat.com> 3.7.8-17
 - fix #841520 - do not try to change owner of log if it is not needed
 - fix #848131 - fix bad umask value while creating temp file

@@ -8,7 +8,7 @@ index 287fa9b..6bfccce 100644
  			    createOwner, createGroup, &foo);
 +		/* We support 'create <owner> <group>' notation now */
 +		if (rc == 0) {
-+			rc = sscanf(start, "%200s %200s%c",
++			rc = sscanf(start, "%199s %199s%c",
 +					createOwner, createGroup, &foo);
 +			/* Simulate that we have read createMode and set it
 +				* to NO_MODE. */
