@@ -1,0 +1,251 @@
+diff --git a/config.c b/config.c
+index 287fa9b..6bfccce 100644
+--- a/config.c
++++ b/config.c
+@@ -736,6 +736,17 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 
+ 		rc = sscanf(start, "%o %s %s%c", &createMode,
+ 			    createOwner, createGroup, &foo);
++		/* We support 'create <owner> <group>' notation now */
++		if (rc == 0) {
++			rc = sscanf(start, "%200s %200s%c",
++					createOwner, createGroup, &foo);
++			/* Simulate that we have read createMode and set it
++				* to NO_MODE. */
++			if (rc > 0) {
++				createMode = NO_MODE;
++				rc += 1;
++			}
++		}
+ 		if (rc == 4) {
+ 		    message(MESS_ERROR, "%s:%d extra arguments for "
+ 			    "create\n", configFile, lineNum);
+diff --git a/logrotate.8 b/logrotate.8
+index ee8f782..9831a81 100644
+--- a/logrotate.8
++++ b/logrotate.8
+@@ -193,7 +193,7 @@ When this option is used, the \fBcreate\fR option will have no effect,
+ as the old log file stays in place.
+ 
+ .TP
+-\fBcreate \fImode\fR \fIowner\fR \fIgroup\fR
++\fBcreate \fImode\fR \fIowner\fR \fIgroup\fR, \fBcreate \fIowner\fR \fIgroup\fR
+ Immediately after rotation (before the \fBpostrotate\fR script is run)
+ the log file is created (with the same name as the log file just rotated).
+ \fImode\fR specifies the mode for the log file in octal (the same
+diff --git a/logrotate.c b/logrotate.c
+index f6cf35d..be335b0 100644
+--- a/logrotate.c
++++ b/logrotate.c
+@@ -24,9 +24,13 @@ int selinux_enforce = 0;
+ 
+ #ifdef WITH_ACL
+ #include "sys/acl.h"
+-static acl_t prev_acl = NULL;
++#define acl_type acl_t
++#else
++#define acl_type void *
+ #endif
+ 
++static acl_type prev_acl = NULL;
++
+ #include "basenames.h"
+ #include "log.h"
+ #include "logrotate.h"
+@@ -224,12 +228,13 @@ static int runScript(char *logfn, char *script)
+     return rc;
+ }
+ 
+-int createOutputFile(char *fileName, int flags, struct stat *sb)
++int createOutputFile(char *fileName, int flags, struct stat *sb, acl_type acl, int force_mode)
+ {
+     int fd;
+ 	char template[PATH_MAX + 1];
+ 	mode_t umask_value;
+     struct stat sb_create;
++	int acl_set = 0;
+ 	snprintf(template, PATH_MAX, "%s/logrotate_temp.XXXXXX", ourDirName(fileName));
+ 
+ 	umask_value = umask(0777);
+@@ -259,12 +264,32 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 		return -1;
+ 	}
+ 
+-	if (fchmod(fd, sb->st_mode)) {
+-		message(MESS_ERROR, "error setting mode of %s: %s\n",
++#ifdef WITH_ACL
++	if (!force_mode && acl) {
++		if (acl_set_fd(fd, acl) == -1) {
++			if (errno != ENOTSUP) {
++				message(MESS_ERROR, "setting ACL for %s: %s\n",
+ 				fileName, strerror(errno));
+-		close(fd);
+-		unlink(template);
+-		return -1;
++				close(fd);
++				unlink(template);
++				return -1;
++			}
++			acl_set = 0;
++		}
++		else {
++			acl_set = 1;
++		}
++	}
++#endif
++
++	if (!acl_set || force_mode) {
++		if (fchmod(fd, sb->st_mode)) {
++			message(MESS_ERROR, "error setting mode of %s: %s\n",
++					fileName, strerror(errno));
++			close(fd);
++			unlink(template);
++			return -1;
++		}
+ 	}
+ 
+ 	if (rename(template, fileName)) {
+@@ -381,39 +406,29 @@ static int compressLogFile(char *name, struct logInfo *log, struct stat *sb)
+ 	return 1;
+     }
+ 
+-    outFile =
+-	createOutputFile(compressedName, O_RDWR | O_CREAT | O_TRUNC, sb);
+-    if (outFile < 0) {
+-	close(inFile);
+-	return 1;
+-    }
+-
+ #ifdef WITH_ACL
+ 	if ((prev_acl = acl_get_fd(inFile)) == NULL) {
+ 		if (errno != ENOTSUP) {
+ 			message(MESS_ERROR, "getting file ACL %s: %s\n",
+ 				name, strerror(errno));
+ 			close(inFile);
+-			close(outFile);
+ 			return 1;
+ 		}
+ 	}
++#endif
++
++    outFile =
++	createOutputFile(compressedName, O_RDWR | O_CREAT | O_TRUNC, sb, prev_acl, 0);
++#ifdef WITH_ACL
+ 	if (prev_acl) {
+-		if (acl_set_fd(outFile, prev_acl) == -1) {
+-			if (errno != ENOTSUP) {
+-				message(MESS_ERROR, "setting ACL for %s: %s\n",
+-				compressedName, strerror(errno));
+-				acl_free(prev_acl);
+-				prev_acl = NULL;
+-				close(inFile);
+-				close(outFile);
+-				return 1;
+-			}
+-		}
+ 		acl_free(prev_acl);
+ 		prev_acl = NULL;
+ 	}
+-#endif /* WITH_ACL */
++#endif
++    if (outFile < 0) {
++	close(inFile);
++	return 1;
++    }
+ 
+     if (!fork()) {
+ 	dup2(inFile, 0);
+@@ -592,7 +607,7 @@ static int copyTruncate(char *currLog, char *saveLog, struct stat *sb,
+ 	}
+ #endif /* WITH_ACL */
+ 	fdsave =
+-	    createOutputFile(saveLog, O_WRONLY | O_CREAT | O_TRUNC, sb);
++	    createOutputFile(saveLog, O_WRONLY | O_CREAT | O_TRUNC, sb, prev_acl, 0);
+ #ifdef WITH_SELINUX
+ 	if (selinux_enabled) {
+ 	    setfscreatecon_raw(prev_context);
+@@ -600,33 +615,16 @@ static int copyTruncate(char *currLog, char *saveLog, struct stat *sb,
+ 		prev_context = NULL;
+ 	}
+ #endif
+-	if (fdsave < 0) {
+-	    close(fdcurr);
+-#ifdef WITH_ACL
+-		if (prev_acl) {
+-			acl_free(prev_acl);
+-			prev_acl = NULL;
+-		}
+-#endif /* WITH_ACL */
+-	    return 1;
+-	}
+ #ifdef WITH_ACL
+ 	if (prev_acl) {
+-		if (acl_set_fd(fdsave, prev_acl) == -1) {
+-			if (errno != ENOTSUP) {
+-				message(MESS_ERROR, "setting ACL for %s: %s\n",
+-				saveLog, strerror(errno));
+-				acl_free(prev_acl);
+-				prev_acl = NULL;
+-				close(fdsave);
+-				close(fdcurr);
+-				return 1;
+-			}
+-		}
+ 		acl_free(prev_acl);
+ 		prev_acl = NULL;
+ 	}
+-#endif /* WITH_ACL */
++#endif
++	if (fdsave < 0) {
++	    close(fdcurr);
++	    return 1;
++	}
+ 
+ 	while ((cnt = read(fdcurr, buf, sizeof(buf))) > 0) {
+ 	    if (write(fdsave, buf, cnt) != cnt) {
+@@ -1260,10 +1258,13 @@ int rotateSingleLog(struct logInfo *log, int logNum, struct logState *state,
+ 	    else
+ 		sb.st_gid = log->createGid;
+ 
++	    int have_create_mode = 0;
+ 	    if (log->createMode == NO_MODE)
+ 		sb.st_mode = state->sb.st_mode & 0777;
+-	    else
++	    else {
+ 		sb.st_mode = log->createMode;
++		have_create_mode = 1;
++	    }
+ 
+ 	    message(MESS_DEBUG, "creating new %s mode = 0%o uid = %d "
+ 		    "gid = %d\n", log->files[logNum], (unsigned int) sb.st_mode,
+@@ -1272,23 +1273,16 @@ int rotateSingleLog(struct logInfo *log, int logNum, struct logState *state,
+ 	    if (!debug) {
+ 			if (!hasErrors) {
+ 			fd = createOutputFile(log->files[logNum], O_CREAT | O_RDWR,
+-						  &sb);
++						  &sb, prev_acl, have_create_mode);
++#ifdef WITH_ACL
++			if (prev_acl) {
++				acl_free(prev_acl);
++				prev_acl = NULL;
++			}
++#endif
+ 			if (fd < 0)
+ 				hasErrors = 1;
+ 			else {
+-#ifdef WITH_ACL
+-				if (prev_acl) {
+-					if (acl_set_fd(fd, prev_acl) == -1) {
+-						if (errno != ENOTSUP) {
+-							message(MESS_ERROR, "setting ACL for %s: %s\n",
+-							log->files[logNum], strerror(errno));
+-							hasErrors = 1;
+-						}
+-					}
+-					acl_free(prev_acl);
+-					prev_acl = NULL;
+-				}
+-#endif /* WITH_ACL */
+ 				close(fd);
+ 			}
+ 			}

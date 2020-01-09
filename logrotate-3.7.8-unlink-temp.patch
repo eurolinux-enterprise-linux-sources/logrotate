@@ -1,0 +1,37 @@
+diff --git a/logrotate.c b/logrotate.c
+index bfefc35..0e2856a 100644
+--- a/logrotate.c
++++ b/logrotate.c
+@@ -245,6 +245,8 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 	if (fstat(fd, &sb_create)) {
+ 		message(MESS_ERROR, "fstat of %s failed: %s\n", fileName,
+ 			strerror(errno));
++		close(fd);
++		unlink(template);
+ 		return -1;
+ 	}
+ 	
+@@ -253,6 +255,7 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 		message(MESS_ERROR, "error setting owner of %s to uid %d and gid %d: %s\n",
+ 			fileName, sb->st_uid, sb->st_gid, strerror(errno));
+ 		close(fd);
++		unlink(template);
+ 		return -1;
+ 	}
+ 
+@@ -260,6 +263,7 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 		message(MESS_ERROR, "error setting mode of %s: %s\n",
+ 				fileName, strerror(errno));
+ 		close(fd);
++		unlink(template);
+ 		return -1;
+ 	}
+ 
+@@ -267,6 +271,7 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 		message(MESS_ERROR, "error renaming temp file to %s: %s\n",
+ 				fileName, strerror(errno));
+ 		close(fd);
++		unlink(template);
+ 		return -1;
+ 	}
+ 

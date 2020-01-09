@@ -1,0 +1,62 @@
+diff --git a/config.c b/config.c
+index a09ce33..287fa9b 100644
+--- a/config.c
++++ b/config.c
+@@ -502,6 +502,7 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+     struct logInfo *log;
+ 	static unsigned recursion_depth = 0U;
+ 	char *globerr_msg = NULL;
++	int in_config = 0;
+ 
+     /* FIXME: createOwner and createGroup probably shouldn't be fixed
+        length arrays -- of course, if we aren't run setuid it doesn't
+@@ -1303,6 +1304,7 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 	    lineNum++;
+ 	    start++;
+ 	} else if (*start == '/' || *start == '"' || *start == '\'') {
++		in_config = 0;
+ 	    if (newlog != defConfig) {
+ 		message(MESS_ERROR, "%s:%d unexpected log filename\n",
+ 			configFile, lineNum);
+@@ -1325,12 +1327,24 @@ static int readConfigFile(const char *configFile, struct logInfo *defConfig)
+ 		return 1;
+ 
+ 	    endtag = start;
+-	    while (*endtag != '{' && *endtag != '\0')
++	    while (*endtag != '{' && *endtag != '}' &&  *endtag != '\0')
+ 		endtag++;
++
++		if (*endtag == '}') {
++			message(MESS_ERROR, "%s:%d unexpected } (missing previous '{')\n", configFile,
++				lineNum);
++			return 1;
++		}
++
+ 	    if (*endtag != '{') {
+-		message(MESS_ERROR, "%s:%d missing end of line\n",
+-			configFile, lineNum);
++		message(MESS_ERROR, "%s:%d missing '{' after log files definition\n", configFile,
++			lineNum);
++		return 1;
+ 	    }
++
++		if (*endtag == '{') {
++			in_config = 1;
++		}
+ 	    *endtag = '\0';
+ 
+ 	    if (poptParseArgvString(start, &argc, &argv)) {
+@@ -1417,6 +1431,13 @@ duperror:
+ 			lineNum);
+ 		return 1;
+ 	    }
++	if (!in_config) {
++		message(MESS_ERROR, "%s:%d unexpected } (missing previous '{')\n", configFile,
++			lineNum);
++		return 1;
++	}
++	in_config = 0;
++
+ 	if (globerr_msg) {
+ 		if (!(newlog->flags & LOG_FLAG_MISSINGOK))
+ 		    message(MESS_ERROR, globerr_msg);

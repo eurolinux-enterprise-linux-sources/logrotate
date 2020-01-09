@@ -1,0 +1,32 @@
+diff --git a/logrotate.c b/logrotate.c
+index 4b9c235..f11154c 100644
+--- a/logrotate.c
++++ b/logrotate.c
+@@ -229,6 +229,7 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+     int fd;
+ 	char template[PATH_MAX + 1];
+ 	mode_t umask_value;
++    struct stat sb_create;
+ 	snprintf(template, PATH_MAX, "%s/logrotate_temp.XXXXXX", ourDirName(fileName));
+ 
+ 	umask_value = umask(0000);
+@@ -241,9 +242,16 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+ 		return -1;
+ 	}
+ 
+-	if (fchown(fd, sb->st_uid, sb->st_gid)) {
+-		message(MESS_ERROR, "error setting owner of %s: %s\n",
+-				fileName, strerror(errno));
++	if (fstat(fd, &sb_create)) {
++		message(MESS_ERROR, "fstat of %s failed: %s\n", fileName,
++			strerror(errno));
++		return -1;
++	}
++	
++	if ((sb_create.st_uid != sb->st_uid || sb_create.st_gid != sb->st_gid) && 
++	fchown(fd, sb->st_uid, sb->st_gid)) {
++		message(MESS_ERROR, "error setting owner of %s to uid %d and gid %d: %s\n",
++			fileName, sb->st_uid, sb->st_gid, strerror(errno));
+ 		close(fd);
+ 		return -1;
+ 	}

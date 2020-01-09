@@ -1,0 +1,13 @@
+diff --git a/logrotate.c b/logrotate.c
+index f11154c..bfefc35 100644
+--- a/logrotate.c
++++ b/logrotate.c
+@@ -232,7 +232,7 @@ int createOutputFile(char *fileName, int flags, struct stat *sb)
+     struct stat sb_create;
+ 	snprintf(template, PATH_MAX, "%s/logrotate_temp.XXXXXX", ourDirName(fileName));
+ 
+-	umask_value = umask(0000);
++	umask_value = umask(0777);
+ 	fd = mkstemp(template);
+ 	umask(umask_value);
+ 
