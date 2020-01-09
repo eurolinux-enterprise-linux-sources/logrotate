@@ -1,0 +1,128 @@
+From 83ef4e1fdea20e39171d7d4ec63777903a889f1b Mon Sep 17 00:00:00 2001
+From: jkaluza <jkaluza@ec1272ba-9ed1-42ef-8245-99669996828e>
+Date: Mon, 5 Sep 2011 07:43:52 +0000
+Subject: [PATCH 1/2] Add strlen() sanity check to mbrtowc() call. Thanks to
+ jmcg
+
+Upstream-commit: e1c2065c0f9cacafb9506f0c85e95c26ad5be1f4
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ config.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/config.c b/config.c
+index f12b61f..45535a7 100644
+--- a/config.c
++++ b/config.c
+@@ -94,7 +94,7 @@ static char *readPath(const char *configFile, int lineNum, char *key,
+ 
+ 	chptr = start;
+ 
+-	while( (len = mbrtowc(&pwc, chptr, strlen(chptr), NULL)) != 0 ) {
++	while( (len = mbrtowc(&pwc, chptr, strlen(chptr), NULL)) != 0 && strlen(chptr) != 0) {
+ 		if( len == (size_t)(-1) || len == (size_t)(-2) || !iswprint(pwc) || iswblank(pwc) ) {
+ 		    message(MESS_ERROR, "%s:%d bad %s path %s\n",
+ 			    configFile, lineNum, key, start);
+-- 
+2.7.4
+
+
+From 3ef2648d118826e316c6bd807c1408b91717358e Mon Sep 17 00:00:00 2001
+From: Jan Kaluza <jkaluza@redhat.com>
+Date: Tue, 26 Jan 2016 12:43:21 +0100
+Subject: [PATCH 2/2] Fix 'olddir' usage with wildcard in the middle of path in
+ the pattern definition when the pattern did not match any log file.
+
+Upstream-commit: 73493ec38c5e806fa66d8c3f13259775da6282d9
+Signed-off-by: Kamil Dudka <kdudka@redhat.com>
+---
+ config.c               | 24 ++++++++++++++++++------
+ test/test              | 21 +++++++++++++++++++++
+ test/test-config.69.in | 10 ++++++++++
+ 3 files changed, 49 insertions(+), 6 deletions(-)
+ create mode 100644 test/test-config.69.in
+
+diff --git a/config.c b/config.c
+index 45535a7..ec8e319 100644
+--- a/config.c
++++ b/config.c
+@@ -1609,12 +1609,24 @@ duperror:
+ 			int rv;
+ 			dirName = ourDirName(newlog->files[i]);
+ 			if (stat(dirName, &sb2)) {
+-				message(MESS_ERROR,
+-					"%s:%d error verifying log file "
+-					"path %s: %s\n", configFile, lineNum,
+-					dirName, strerror(errno));
+-				free(dirName);
+-				return 1;
++				if (!(newlog->flags & LOG_FLAG_MISSINGOK)) {
++					message(MESS_ERROR,
++							"%s:%d error verifying log file "
++							"path %s: %s\n", configFile, lineNum,
++							dirName, strerror(errno));
++					free(dirName);
++					return 1;
++				}
++				else {
++					message(MESS_DEBUG,
++							"%s:%d verifying log file "
++							"path failed %s: %s, log is probably missing, "
++							"but missingok is set, so this is not an error.\n",
++							configFile, lineNum,
++							dirName, strerror(errno));
++					free(dirName);
++					continue;
++				}
+ 			}
+ 			ld = alloca(strlen(dirName) + strlen(newlog->oldDir) + 2);
+ 			sprintf(ld, "%s/%s", dirName, newlog->oldDir);
+diff --git a/test/test b/test/test
+index 538ea19..0c73b1d 100755
+--- a/test/test
++++ b/test/test
+@@ -380,4 +380,25 @@ test.log.$DATESTRING 0 zero
+ EOF
+ 
+ rm -rf testdir
++
++cleanup 69
++
++# ------------------------------- Test 69 ------------------------------------
++# Test olddir with wildcard in the pattern
++preptest test.log 69 1 0
++rm -rf testdir adir bdir
++mkdir adir
++mkdir bdir
++cp test.log adir
++cp test.log bdir
++$RLR test-config.69 --force -v
++
++checkoutput <<EOF
++adir/test.log 0
++testdir/test.log.1 0 zero
++EOF
++
++rm -rf testdir adir
++rm -rf testdir bdir
++
+ cleanup
+diff --git a/test/test-config.69.in b/test/test-config.69.in
+new file mode 100644
+index 0000000..9752e0a
+--- /dev/null
++++ b/test/test-config.69.in
+@@ -0,0 +1,10 @@
++create
++
++&DIR&/*/test.log
++&DIR&/*/test.lo3 {
++    monthly
++    rotate 1
++    olddir &DIR&/testdir
++    createolddir 700 &USER& &GROUP&
++    missingok
++}
+-- 
+2.7.4
+

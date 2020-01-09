@@ -1,7 +1,7 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.7.8
-Release: 26%{?dist}
+Release: 28%{?dist}
 License: GPL+
 URL: https://fedorahosted.org/logrotate/
 Group: System Environment/Base
@@ -34,6 +34,15 @@ Patch26: logrotate-3.7.8-createolddir.patch
 Patch28: logrotate-3.7.8-covscan.path
 Patch29: logrotate-3.7.8-compress-subject.patch
 Patch30: logrotate-3.7.8-olddircopy.patch
+
+# fix #1302717 - make olddir respect the missingok flag
+Patch31: logrotate-3.7.8-olddir-missingok.patch
+
+# fix #1369242 - heap buffer overflow when using long date format
+Patch32: logrotate-3.7.8-longdate-crash.patch
+
+# fix #1285481 - make 'createolddir' preserve sticky bit
+Patch33: logrotate-3.7.8-createolddir-fixup.patch
 
 Requires: coreutils >= 5.92 libsepol libselinux popt
 BuildRequires: libselinux-devel popt-devel libacl-devel
@@ -80,6 +89,9 @@ log files on your system.
 %patch28 -p1 -b .covscan
 %patch29 -p1 -b .compressmail
 %patch30 -p1 -b .olddircopy
+%patch31 -p1
+%patch32 -p1
+%patch33 -p1
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -94,6 +106,9 @@ mkdir -p $RPM_BUILD_ROOT/%{_localstatedir}/lib
 install -p -m 644 examples/logrotate-default $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.conf
 install -p -m 755 examples/logrotate.cron $RPM_BUILD_ROOT/%{_sysconfdir}/cron.daily/logrotate
 touch $RPM_BUILD_ROOT/%{_localstatedir}/lib/logrotate.status
+
+%check
+make test
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -110,6 +125,14 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0644, root, root) %verify(not size md5 mtime) %config(noreplace) %{_localstatedir}/lib/logrotate.status
 
 %changelog
+* Fri Sep 23 2016 Kamil Dudka <kdudka@redhat.com> - 3.7.8-28
+- fix #1285481 - make 'createolddir' preserve sticky bit
+- fix #1369242 - heap buffer overflow when using long date format
+
+* Tue Sep 13 2016 Kamil Dudka <kdudka@redhat.com> - 3.7.8-27
+- run upstream test-suite during the build
+- fix #1302717 - make olddir respect the missingok flag
+
 * Mon Nov 09 2015 Jan Kaluza <jkaluza@redhat.com> 3.7.8-26
 - fix #1277144 - support olddir on different device with copy or copytruncate
 
