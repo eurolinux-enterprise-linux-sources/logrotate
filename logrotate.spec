@@ -1,58 +1,17 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.8.6
-Release: 17%{?dist}
+Release: 7%{?dist}
 License: GPL+
 Group: System Environment/Base
-URL: https://github.com/logrotate/logrotate
+Url: https://fedorahosted.org/logrotate/
 Source: https://fedorahosted.org/releases/l/o/logrotate/logrotate-%{version}.tar.gz
-Source1: rwtab
 Patch0: logrotate-3.8.6-force.patch
 Patch1: logrotate-3.8.6-r465.patch
 Patch2: logrotate-3.8.6-sortglob.patch
 Patch3: logrotate-3.8.6-r460.patch
 Patch4: logrotate-3.8.6-compress-subject.patch
 Patch5: logrotate-3.8.6-olddircopy.patch
-Patch6: logrotate-3.8.6-state-clean.patch
-
-# fix #1381719 - make /var/lib/logrotate/logrotate.status the default state file
-Patch7: logrotate-3.8.6-statusfile.patch
-
-# fix #1192936 - provide diagnostic in case log does not need rotating
-Patch9: logrotate-3.8.6-diagnostic.patch
-
-# fix #1375638 - make olddir respect the missingok flag
-Patch10: logrotate-3.8.6-olddir-missingok.patch
-
-# fix #1369438 - heap buffer overflow when using long date format
-Patch11: logrotate-3.8.6-longdate-crash.patch
-
-# fix #1377335 - make 'createolddir' preserve sticky bit
-Patch12: logrotate-3.8.6-createolddir.patch
-
-# fix #1374331 - preserve SELinux context with 'compress' and 'sharedscripts'
-Patch13: logrotate-3.8.6-selinux.patch
-
-# fix #1387533 - make 'su' directive accept usernames starting with digits
-Patch14: logrotate-3.8.6-su-username.patch
-
-# fix #1461907 - make 'copy' and 'copytruncate' work together
-Patch15: logrotate-3.8.6-copy-and-copytruncate.patch
-
-# fix #1465720 - trigger weekly rotations more predictably
-Patch16: logrotate-3.8.6-weekly.patch
-
-# fix #1472984 - improve the error message for bad config file mode
-Patch17: logrotate-3.8.6-config-mode-err.patch
-
-# fix #1483800 - update references to project page
-Patch18: logrotate-3.8.6-upstream-url.patch
-
-# fix #1556993 - premature monthly rotation due to DST switch
-Patch19: logrotate-3.8.6-monthly-dst.patch
-
-# fix #1374550 - unlink destination file when rotation fails
-Patch20: logrotate-3.8.6-unlink-on-failure.patch
 
 Requires: coreutils >= 5.92 popt
 BuildRequires: libselinux-devel popt-devel libacl-devel acl
@@ -78,20 +37,6 @@ log files on your system.
 %patch3 -p1 -b .r460
 %patch4 -p1 -b .compressmail
 %patch5 -p1 -b .olddircopy
-%patch6 -p1 -b .stateclean
-%patch7 -p1
-%patch9 -p1
-%patch10 -p1
-%patch11 -p1
-%patch12 -p1
-%patch13 -p1
-%patch14 -p1
-%patch15 -p1
-%patch16 -p1
-%patch17 -p1
-%patch18 -p1
-%patch19 -p1
-%patch20 -p1
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -104,24 +49,11 @@ rm -rf $RPM_BUILD_ROOT
 make PREFIX=$RPM_BUILD_ROOT MANDIR=%{_mandir} install
 mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.d
 mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/cron.daily
-mkdir -p $RPM_BUILD_ROOT/%{_localstatedir}/lib/logrotate
+mkdir -p $RPM_BUILD_ROOT/%{_localstatedir}/lib
 
 install -p -m 644 examples/logrotate-default $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.conf
 install -p -m 755 examples/logrotate.cron $RPM_BUILD_ROOT/%{_sysconfdir}/cron.daily/logrotate
-
-# Make sure logrotate is able to run on read-only root
-mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/rwtab.d
-install -m644 %{SOURCE1} $RPM_BUILD_ROOT%{_sysconfdir}/rwtab.d/logrotate
-
-%pre
-# If /var/lib/logrotate/logrotate.status does not exist, create it and copy
-# the /var/lib/logrotate.status in it (if it exists). We have to do that in pre
-# script, otherwise the /var/lib/logrotate/logrotate.status would not be there,
-# because during the update, it is removed/renamed.
-if [ ! -d %{_localstatedir}/lib/logrotate/ -a -f %{_localstatedir}/lib/logrotate.status ]; then
-  mkdir -p %{_localstatedir}/lib/logrotate
-  cp -a %{_localstatedir}/lib/logrotate.status %{_localstatedir}/lib/logrotate
-fi
+touch $RPM_BUILD_ROOT/%{_localstatedir}/lib/logrotate.status
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -135,52 +67,9 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0700, root, root) %config(noreplace) %{_sysconfdir}/cron.daily/logrotate
 %attr(0644, root, root) %config(noreplace) %{_sysconfdir}/logrotate.conf
 %attr(0755, root, root) %dir %{_sysconfdir}/logrotate.d
-%attr(0755, root, root) %dir %{_localstatedir}/lib/logrotate
-%attr(0644, root, root) %ghost %verify(not size md5 mtime) %{_localstatedir}/lib/logrotate/logrotate.status
-%config(noreplace) %{_sysconfdir}/rwtab.d/logrotate
+%attr(0644, root, root) %verify(not size md5 mtime) %config(noreplace) %{_localstatedir}/lib/logrotate.status
 
 %changelog
-* Fri Jun 15 2018 Kamil Dudka <kdudka@redhat.com> - 3.8.6-17
-- fix #1374550 - unlink destination file when rotation fails
-
-* Tue Mar 20 2018 Kamil Dudka <kdudka@redhat.com> - 3.8.6-16
-- fix #1556993 - premature monthly rotation due to DST switch
-
-* Mon Sep 25 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-15
-- fix #1483800 - update references to project page
-- fix #1472984 - improve the error message for bad config file mode
-- fix #1465720 - trigger weekly rotations more predictably
-- fix #1461907 - make 'copy' and 'copytruncate' work together
-
-* Tue Jan 24 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-14
-- fix #1381719 - make /var/lib/logrotate/logrotate.status the default state file
-- fix #1387533 - make 'su' directive accept usernames starting with digits
-
-* Tue Sep 13 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-13
-- fix #1393247 - migration of state file from previous versions of logrotate
-- fix #1374331 - preserve SELinux context with 'compress' and 'sharedscripts'
-- fix #1377335 - make 'createolddir' preserve sticky bit
-- fix #1369438 - heap buffer overflow when using long date format
-- fix #1375638 - make olddir respect the missingok flag
-
-* Thu Jul 14 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-12
-- make the /var/lib/logrotate directory owned by logrotate (#1272236)
-
-* Mon Jul 11 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-11
-- fix #1354203 - remove the fix for bug #1321980
-
-* Fri Jul 01 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-10
-- fix #1192936 - provide diagnostic in case log does not need rotating
-- fix #1321980 - do not exit if status file is corrupted
-
-* Fri Jul 01 2016 Jan Kaluza <jkaluza@redhat.com> - 3.8.6-9
-- fix #1272236 - add missing rwtab file
-
-* Fri Mar 11 2016 Jan Kaluza <jkaluza@redhat.com> - 3.8.6-8
-- fix #1201252 - delete unused entries in state file, fix bad performance
-  with big state file
-- fix #1272236 - move logrotate.status to /var/lib/logrotate and add it to rwtab.d
-
 * Mon Nov 09 2015 Jan Kaluza <jkaluza@redhat.com> - 3.8.6-7
 - fix #1163437 - support olddir on different device with copy or copytruncate
 

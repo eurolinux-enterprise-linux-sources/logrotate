@@ -2,7 +2,7 @@ Index: /trunk/logrotate.8
 ===================================================================
 --- a/logrotate.8	(revision 464)
 +++ b/logrotate.8	(revision 465)
-@@ -391,7 +391,8 @@
+@@ -406,7 +406,8 @@
  .TP
  \fBolddir \fIdirectory\fR
 -Logs are moved into \fIdirectory\fR for rotation. The \fIdirectory\fR
