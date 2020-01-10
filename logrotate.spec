@@ -1,7 +1,7 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.8.6
-Release: 15%{?dist}
+Release: 17%{?dist}
 License: GPL+
 Group: System Environment/Base
 URL: https://github.com/logrotate/logrotate
@@ -48,6 +48,12 @@ Patch17: logrotate-3.8.6-config-mode-err.patch
 # fix #1483800 - update references to project page
 Patch18: logrotate-3.8.6-upstream-url.patch
 
+# fix #1556993 - premature monthly rotation due to DST switch
+Patch19: logrotate-3.8.6-monthly-dst.patch
+
+# fix #1374550 - unlink destination file when rotation fails
+Patch20: logrotate-3.8.6-unlink-on-failure.patch
+
 Requires: coreutils >= 5.92 popt
 BuildRequires: libselinux-devel popt-devel libacl-devel acl
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
@@ -84,6 +90,8 @@ log files on your system.
 %patch16 -p1
 %patch17 -p1
 %patch18 -p1
+%patch19 -p1
+%patch20 -p1
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -132,6 +140,12 @@ rm -rf $RPM_BUILD_ROOT
 %config(noreplace) %{_sysconfdir}/rwtab.d/logrotate
 
 %changelog
+* Fri Jun 15 2018 Kamil Dudka <kdudka@redhat.com> - 3.8.6-17
+- fix #1374550 - unlink destination file when rotation fails
+
+* Tue Mar 20 2018 Kamil Dudka <kdudka@redhat.com> - 3.8.6-16
+- fix #1556993 - premature monthly rotation due to DST switch
+
 * Mon Sep 25 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-15
 - fix #1483800 - update references to project page
 - fix #1472984 - improve the error message for bad config file mode
