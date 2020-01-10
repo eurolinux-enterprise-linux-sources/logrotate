@@ -1,7 +1,7 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.8.6
-Release: 12%{?dist}
+Release: 14%{?dist}
 License: GPL+
 Group: System Environment/Base
 Url: https://fedorahosted.org/logrotate/
@@ -14,10 +14,27 @@ Patch3: logrotate-3.8.6-r460.patch
 Patch4: logrotate-3.8.6-compress-subject.patch
 Patch5: logrotate-3.8.6-olddircopy.patch
 Patch6: logrotate-3.8.6-state-clean.patch
+
+# fix #1381719 - make /var/lib/logrotate/logrotate.status the default state file
 Patch7: logrotate-3.8.6-statusfile.patch
 
 # fix #1192936 - provide diagnostic in case log does not need rotating
 Patch9: logrotate-3.8.6-diagnostic.patch
+
+# fix #1375638 - make olddir respect the missingok flag
+Patch10: logrotate-3.8.6-olddir-missingok.patch
+
+# fix #1369438 - heap buffer overflow when using long date format
+Patch11: logrotate-3.8.6-longdate-crash.patch
+
+# fix #1377335 - make 'createolddir' preserve sticky bit
+Patch12: logrotate-3.8.6-createolddir.patch
+
+# fix #1374331 - preserve SELinux context with 'compress' and 'sharedscripts'
+Patch13: logrotate-3.8.6-selinux.patch
+
+# fix #1387533 - make 'su' directive accept usernames starting with digits
+Patch14: logrotate-3.8.6-su-username.patch
 
 Requires: coreutils >= 5.92 popt
 BuildRequires: libselinux-devel popt-devel libacl-devel acl
@@ -44,8 +61,13 @@ log files on your system.
 %patch4 -p1 -b .compressmail
 %patch5 -p1 -b .olddircopy
 %patch6 -p1 -b .stateclean
-%patch7 -p1 -b .statusfile
+%patch7 -p1
 %patch9 -p1
+%patch10 -p1
+%patch11 -p1
+%patch12 -p1
+%patch13 -p1
+%patch14 -p1
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -62,7 +84,6 @@ mkdir -p $RPM_BUILD_ROOT/%{_localstatedir}/lib/logrotate
 
 install -p -m 644 examples/logrotate-default $RPM_BUILD_ROOT/%{_sysconfdir}/logrotate.conf
 install -p -m 755 examples/logrotate.cron $RPM_BUILD_ROOT/%{_sysconfdir}/cron.daily/logrotate
-touch $RPM_BUILD_ROOT/%{_localstatedir}/lib/logrotate/logrotate.status
 
 # Make sure logrotate is able to run on read-only root
 mkdir -p $RPM_BUILD_ROOT/%{_sysconfdir}/rwtab.d
@@ -91,10 +112,21 @@ rm -rf $RPM_BUILD_ROOT
 %attr(0644, root, root) %config(noreplace) %{_sysconfdir}/logrotate.conf
 %attr(0755, root, root) %dir %{_sysconfdir}/logrotate.d
 %attr(0755, root, root) %dir %{_localstatedir}/lib/logrotate
-%attr(0644, root, root) %verify(not size md5 mtime) %config(noreplace) %{_localstatedir}/lib/logrotate/logrotate.status
+%attr(0644, root, root) %ghost %verify(not size md5 mtime) %{_localstatedir}/lib/logrotate/logrotate.status
 %config(noreplace) %{_sysconfdir}/rwtab.d/logrotate
 
 %changelog
+* Tue Jan 24 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-14
+- fix #1381719 - make /var/lib/logrotate/logrotate.status the default state file
+- fix #1387533 - make 'su' directive accept usernames starting with digits
+
+* Tue Sep 13 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-13
+- fix #1393247 - migration of state file from previous versions of logrotate
+- fix #1374331 - preserve SELinux context with 'compress' and 'sharedscripts'
+- fix #1377335 - make 'createolddir' preserve sticky bit
+- fix #1369438 - heap buffer overflow when using long date format
+- fix #1375638 - make olddir respect the missingok flag
+
 * Thu Jul 14 2016 Kamil Dudka <kdudka@redhat.com> - 3.8.6-12
 - make the /var/lib/logrotate directory owned by logrotate (#1272236)
 
