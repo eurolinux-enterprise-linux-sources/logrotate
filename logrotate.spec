@@ -1,10 +1,10 @@
 Summary: Rotates, compresses, removes and mails system log files
 Name: logrotate
 Version: 3.8.6
-Release: 14%{?dist}
+Release: 15%{?dist}
 License: GPL+
 Group: System Environment/Base
-Url: https://fedorahosted.org/logrotate/
+URL: https://github.com/logrotate/logrotate
 Source: https://fedorahosted.org/releases/l/o/logrotate/logrotate-%{version}.tar.gz
 Source1: rwtab
 Patch0: logrotate-3.8.6-force.patch
@@ -35,6 +35,18 @@ Patch13: logrotate-3.8.6-selinux.patch
 
 # fix #1387533 - make 'su' directive accept usernames starting with digits
 Patch14: logrotate-3.8.6-su-username.patch
+
+# fix #1461907 - make 'copy' and 'copytruncate' work together
+Patch15: logrotate-3.8.6-copy-and-copytruncate.patch
+
+# fix #1465720 - trigger weekly rotations more predictably
+Patch16: logrotate-3.8.6-weekly.patch
+
+# fix #1472984 - improve the error message for bad config file mode
+Patch17: logrotate-3.8.6-config-mode-err.patch
+
+# fix #1483800 - update references to project page
+Patch18: logrotate-3.8.6-upstream-url.patch
 
 Requires: coreutils >= 5.92 popt
 BuildRequires: libselinux-devel popt-devel libacl-devel acl
@@ -68,6 +80,10 @@ log files on your system.
 %patch12 -p1
 %patch13 -p1
 %patch14 -p1
+%patch15 -p1
+%patch16 -p1
+%patch17 -p1
+%patch18 -p1
 
 %build
 make %{?_smp_mflags} RPM_OPT_FLAGS="$RPM_OPT_FLAGS" WITH_SELINUX=yes WITH_ACL=yes
@@ -116,6 +132,12 @@ rm -rf $RPM_BUILD_ROOT
 %config(noreplace) %{_sysconfdir}/rwtab.d/logrotate
 
 %changelog
+* Mon Sep 25 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-15
+- fix #1483800 - update references to project page
+- fix #1472984 - improve the error message for bad config file mode
+- fix #1465720 - trigger weekly rotations more predictably
+- fix #1461907 - make 'copy' and 'copytruncate' work together
+
 * Tue Jan 24 2017 Kamil Dudka <kdudka@redhat.com> - 3.8.6-14
 - fix #1381719 - make /var/lib/logrotate/logrotate.status the default state file
 - fix #1387533 - make 'su' directive accept usernames starting with digits
